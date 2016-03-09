@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/coreos/go-semver/semver"
 	"github.com/fatih/color"
+	"github.com/octoblu/milk-sniff/sniffer"
 	De "github.com/tj/go-debug"
 )
 
@@ -22,53 +20,48 @@ func main() {
 	app.Version = version()
 	app.Action = run
 	app.Flags = []cli.Flag{
+		cli.IntFlag{
+			Name:   "iterations, i",
+			EnvVar: "MILK_SNIFF_ITERATIONS",
+			Usage:  "Redis key pattern to inspect",
+			Value:  10,
+		},
 		cli.StringFlag{
-			Name:   "example, e",
-			EnvVar: "MILK_SNIFF_EXAMPLE",
-			Usage:  "Example string flag",
+			Name:   "redis-uri, r",
+			EnvVar: "MILK_SNIFF_REDIS_URI",
+			Usage:  "Redis URI to sniff test",
 		},
 	}
 	app.Run(os.Args)
 }
 
 func run(context *cli.Context) {
-	example := getOpts(context)
+	iterations, redisURI := getOpts(context)
+	nose := sniffer.New(redisURI)
 
-	sigTerm := make(chan os.Signal)
-	signal.Notify(sigTerm, syscall.SIGTERM)
-
-	sigTermReceived := false
-
-	go func() {
-		<-sigTerm
-		fmt.Println("SIGTERM received, waiting to exit")
-		sigTermReceived = true
-	}()
-
-	for {
-		if sigTermReceived {
-			fmt.Println("I'll be back.")
-			os.Exit(0)
+	for i := 1; i <= iterations; i++ {
+		result, err := nose.Sniff()
+		if err != nil {
+			log.Fatalln("nose.Sniff errored:", err.Error())
 		}
-
-		debug("milk-sniff.loop: %v", example)
-		time.Sleep(1 * time.Second)
+		fmt.Println(result)
 	}
 }
 
-func getOpts(context *cli.Context) string {
-	example := context.String("example")
+func getOpts(context *cli.Context) (int, string) {
+	iterations := context.Int("iterations")
+	redisURI := context.String("redis-uri")
 
-	if example == "" {
+	if redisURI == "" {
 		cli.ShowAppHelp(context)
 
-		if example == "" {
-			color.Red("  Missing required flag --example or MILK_SNIFF_EXAMPLE")
+		if redisURI == "" {
+			color.Red("  Missing required flag --redis-uri or MILK_SNIFF_REDIS_URI")
 		}
 		os.Exit(1)
 	}
 
-	return example
+	return iterations, redisURI
 }
 
 func version() string {
